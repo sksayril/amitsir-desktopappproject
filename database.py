@@ -5,8 +5,19 @@ Handles all database operations including CRUD for automations and steps.
 
 import sqlite3
 import os
+import sys
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+
+
+def get_base_directory():
+    """Get the base directory (works for both script and executable)."""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable
+        return os.path.dirname(sys.executable)
+    else:
+        # Running as script
+        return os.path.dirname(os.path.abspath(__file__))
 
 
 class Database:
@@ -17,9 +28,20 @@ class Database:
         Initialize database connection and create tables if they don't exist.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (relative or absolute)
         """
-        self.db_path = db_path
+        # Resolve database path to work with executables
+        if not os.path.isabs(db_path):
+            base_dir = get_base_directory()
+            self.db_path = os.path.join(base_dir, db_path)
+        else:
+            self.db_path = db_path
+        
+        # Ensure directory exists
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+        
         self.init_database()
     
     def get_connection(self) -> sqlite3.Connection:
@@ -55,6 +77,7 @@ class Database:
                 image_path TEXT,
                 text TEXT,
                 hotkey TEXT,
+                key_press TEXT,
                 delay_before REAL DEFAULT 0,
                 delay_after REAL DEFAULT 0,
                 confidence REAL DEFAULT 0.8,
@@ -62,6 +85,12 @@ class Database:
                 UNIQUE(automation_id, step_order)
             )
         """)
+        
+        # Add key_press column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE steps ADD COLUMN key_press TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         conn.commit()
         conn.close()
@@ -152,8 +181,8 @@ class Database:
     def add_step(self, automation_id: int, step_order: int, step_type: str,
                  x: Optional[int] = None, y: Optional[int] = None,
                  image_path: Optional[str] = None, text: Optional[str] = None,
-                 hotkey: Optional[str] = None, delay_before: float = 0,
-                 delay_after: float = 0, confidence: float = 0.8) -> int:
+                 hotkey: Optional[str] = None, key_press: Optional[str] = None,
+                 delay_before: float = 0, delay_after: float = 0, confidence: float = 0.8) -> int:
         """
         Add a step to an automation.
         
@@ -167,11 +196,11 @@ class Database:
             cursor.execute("""
                 INSERT INTO steps (
                     automation_id, step_order, step_type, x, y, image_path,
-                    text, hotkey, delay_before, delay_after, confidence
+                    text, hotkey, key_press, delay_before, delay_after, confidence
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (automation_id, step_order, step_type, x, y, image_path,
-                  text, hotkey, delay_before, delay_after, confidence))
+                  text, hotkey, key_press, delay_before, delay_after, confidence))
             
             conn.commit()
             step_id = cursor.lastrowid
@@ -186,7 +215,7 @@ class Database:
         
         cursor.execute("""
             SELECT id, automation_id, step_order, step_type, x, y, image_path,
-                   text, hotkey, delay_before, delay_after, confidence
+                   text, hotkey, key_press, delay_before, delay_after, confidence
             FROM steps
             WHERE automation_id = ?
             ORDER BY step_order ASC
@@ -199,8 +228,8 @@ class Database:
     def update_step(self, step_id: int, step_type: str,
                    x: Optional[int] = None, y: Optional[int] = None,
                    image_path: Optional[str] = None, text: Optional[str] = None,
-                   hotkey: Optional[str] = None, delay_before: float = 0,
-                   delay_after: float = 0, confidence: float = 0.8):
+                   hotkey: Optional[str] = None, key_press: Optional[str] = None,
+                   delay_before: float = 0, delay_after: float = 0, confidence: float = 0.8):
         """Update an existing step."""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -208,9 +237,9 @@ class Database:
         cursor.execute("""
             UPDATE steps
             SET step_type = ?, x = ?, y = ?, image_path = ?, text = ?,
-                hotkey = ?, delay_before = ?, delay_after = ?, confidence = ?
+                hotkey = ?, key_press = ?, delay_before = ?, delay_after = ?, confidence = ?
             WHERE id = ?
-        """, (step_type, x, y, image_path, text, hotkey,
+        """, (step_type, x, y, image_path, text, hotkey, key_press,
               delay_before, delay_after, confidence, step_id))
         
         conn.commit()

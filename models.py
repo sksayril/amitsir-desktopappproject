@@ -41,6 +41,7 @@ class Step:
     image_path: Optional[str] = None
     text: Optional[str] = None
     hotkey: Optional[str] = None
+    key_press: Optional[str] = None
     delay_before: float = 0.0
     delay_after: float = 0.0
     confidence: float = 0.8
@@ -60,6 +61,7 @@ class Step:
             'image_path': self.image_path,
             'text': self.text,
             'hotkey': self.hotkey,
+            'key_press': self.key_press,
             'delay_before': self.delay_before,
             'delay_after': self.delay_after,
             'confidence': self.confidence
@@ -78,6 +80,7 @@ class Step:
             image_path=data.get('image_path'),
             text=data.get('text'),
             hotkey=data.get('hotkey'),
+            key_press=data.get('key_press'),
             delay_before=data.get('delay_before', 0.0),
             delay_after=data.get('delay_after', 0.0),
             confidence=data.get('confidence', 0.8)

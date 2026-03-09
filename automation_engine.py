@@ -3,6 +3,7 @@ Automation engine for executing automation workflows.
 Handles step-by-step execution with threading support.
 """
 
+import os
 import time
 import threading
 import pyautogui
@@ -129,12 +130,24 @@ class AutomationEngine:
             return False
         
         try:
-            self.log(f"Searching for image: {step.image_path} (confidence: {step.confidence})")
+            # Resolve image path to handle relative paths and executable scenarios
+            from utils import resolve_image_path
+            resolved_path = resolve_image_path(step.image_path)
+            
+            if not os.path.exists(resolved_path):
+                self.log(f"Image file not found: {resolved_path} (original: {step.image_path})", "ERROR")
+                screenshot_path = take_screenshot_on_failure(f"image_not_found_{step.id}")
+                self.log(f"Debug screenshot saved: {screenshot_path}", "DEBUG")
+                return False
+            
+            self.log(f"Searching for image: {resolved_path} (confidence: {step.confidence})")
+            
+            # Try with higher retries and longer delays for better reliability
             location = find_image_with_retry(
-                step.image_path,
+                resolved_path,
                 confidence=step.confidence,
-                max_retries=3,
-                retry_delay=1.0
+                max_retries=5,  # Increased retries
+                retry_delay=1.5  # Longer delay between retries
             )
             
             if location:
@@ -143,29 +156,44 @@ class AutomationEngine:
                 pyautogui.click(x, y)
                 return True
             else:
-                self.log(f"Image not found: {step.image_path}", "ERROR")
+                self.log(f"Image not found after retries: {resolved_path}", "ERROR")
+                self.log(f"Original path was: {step.image_path}", "DEBUG")
                 screenshot_path = take_screenshot_on_failure(f"image_not_found_{step.id}")
                 self.log(f"Debug screenshot saved: {screenshot_path}", "DEBUG")
                 return False
                 
         except Exception as e:
             self.log(f"Image click failed: {str(e)}", "ERROR")
+            import traceback
+            self.log(f"Traceback: {traceback.format_exc()}", "DEBUG")
             screenshot_path = take_screenshot_on_failure(f"image_error_{step.id}")
             self.log(f"Debug screenshot saved: {screenshot_path}", "DEBUG")
             return False
     
     def _execute_keyboard_type(self, step: Step) -> bool:
-        """Execute a keyboard type step."""
-        if not step.text:
-            self.log("Keyboard type step missing text", "ERROR")
-            return False
-        
-        try:
-            self.log(f"Typing: {step.text}")
-            pyautogui.write(step.text, interval=0.05)
-            return True
-        except Exception as e:
-            self.log(f"Keyboard type failed: {str(e)}", "ERROR")
+        """Execute a keyboard type step (either type text or press a key)."""
+        # Check if it's a key press or text typing
+        if step.key_press:
+            # Press a specific key
+            try:
+                key_name = step.key_press.lower()
+                self.log(f"Pressing key: {key_name}")
+                pyautogui.press(key_name)
+                return True
+            except Exception as e:
+                self.log(f"Key press failed: {str(e)}", "ERROR")
+                return False
+        elif step.text:
+            # Type text
+            try:
+                self.log(f"Typing: {step.text}")
+                pyautogui.write(step.text, interval=0.05)
+                return True
+            except Exception as e:
+                self.log(f"Keyboard type failed: {str(e)}", "ERROR")
+                return False
+        else:
+            self.log("Keyboard type step missing both text and key_press", "ERROR")
             return False
     
     def _execute_hotkey(self, step: Step) -> bool:
@@ -224,7 +252,9 @@ class AutomationEngine:
             return
         
         self.log(f"Starting automation with {total_steps} step(s)")
+        start_time = time.time()
         
+        completed_steps = 0
         for idx, step in enumerate(steps, start=1):
             if self.should_stop:
                 self.log("Automation stopped by user", "INFO")
@@ -232,16 +262,24 @@ class AutomationEngine:
             
             success = self.execute_step(step, idx, total_steps)
             
-            if not success:
+            if success:
+                completed_steps += 1
+            else:
                 self.log(f"Step {idx} failed, stopping automation", "ERROR")
                 break
         
+        end_time = time.time()
+        duration = end_time - start_time
+        
         if self.should_stop:
             self.update_status("Stopped")
-            self.log("Automation stopped", "INFO")
+            self.log(f"Automation stopped after {completed_steps}/{total_steps} steps", "INFO")
         else:
             self.update_status("Completed")
-            self.log("Automation completed successfully", "INFO")
+            hours = int(duration // 3600)
+            minutes = int((duration % 3600) // 60)
+            seconds = int(duration % 60)
+            self.log(f"Automation completed successfully in {hours:02d}:{minutes:02d}:{seconds:02d} ({completed_steps}/{total_steps} steps)", "INFO")
         
         self.is_running = False
     

@@ -3,11 +3,31 @@ Main entry point for the Automation Builder application.
 Coordinates GUI, database, and automation engine.
 """
 
+import sys
+import os
 import tkinter as tk
-from database import Database
-from automation_engine import AutomationEngine
-from models import Step
-from gui import AutomationBuilderGUI
+from tkinter import messagebox
+
+# Add error handling for missing dependencies
+try:
+    from database import Database
+    from automation_engine import AutomationEngine
+    from models import Step
+    from gui import AutomationBuilderGUI
+except ImportError as e:
+    # Show error message if running as executable
+    if getattr(sys, 'frozen', False):
+        import tkinter.messagebox as msgbox
+        root = tk.Tk()
+        root.withdraw()
+        msgbox.showerror(
+            "Missing Dependencies",
+            f"Required modules are missing:\n{str(e)}\n\n"
+            "Please reinstall the application or contact support."
+        )
+        sys.exit(1)
+    else:
+        raise
 
 
 class AutomationBuilderApp:
@@ -89,9 +109,24 @@ class AutomationBuilderApp:
 
 
 def main():
-    """Main entry point."""
-    app = AutomationBuilderApp()
-    app.run()
+    """Main entry point with error handling."""
+    try:
+        app = AutomationBuilderApp()
+        app.run()
+    except Exception as e:
+        # Show error dialog if running as executable
+        if getattr(sys, 'frozen', False):
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror(
+                "Application Error",
+                f"An error occurred while running the application:\n\n{str(e)}\n\n"
+                "Please check the logs or contact support."
+            )
+        else:
+            # Re-raise exception for development
+            raise
+        sys.exit(1)
 
 
 if __name__ == "__main__":
